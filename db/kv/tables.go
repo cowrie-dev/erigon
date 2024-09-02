@@ -264,6 +264,38 @@ const (
 	//Diagnostics tables
 	DiagSystemInfo = "DiagSystemInfo"
 	DiagSyncStages = "DiagSyncStages"
+
+	// Otterscan2 tables
+	OtsAllContracts = "OtsAllContracts"
+	OtsERC20        = "OtsERC20"
+	OtsERC165       = "OtsERC165"
+	OtsERC721       = "OtsERC721"
+	OtsERC1155      = "OtsERC1155"
+	OtsERC1167      = "OtsERC1167"
+	OtsERC4626      = "OtsERC4626"
+
+	OtsAllContractsCounter = "OtsAllContractsCounter"
+	OtsERC20Counter        = "OtsERC20Counter"
+	OtsERC165Counter       = "OtsERC165Counter"
+	OtsERC721Counter       = "OtsERC721Counter"
+	OtsERC1155Counter      = "OtsERC1155Counter"
+	OtsERC1167Counter      = "OtsERC1167Counter"
+	OtsERC4626Counter      = "OtsERC4626Counter"
+
+	OtsAddrAttributes = "OtsAddrAttributes"
+
+	OtsERC20TransferIndex    = "OtsERC20TransferIndex"
+	OtsERC20TransferCounter  = "OtsERC20TransferCounter"
+	OtsERC721TransferIndex   = "OtsERC721TransferIndex"
+	OtsERC721TransferCounter = "OtsERC721TransferCounter"
+	OtsERC20Holdings         = "OtsERC20Holdings"
+	OtsERC721Holdings        = "OtsERC721Holdings"
+
+	OtsBlocksRewardedIndex   = "OtsBlocksRewardedIndex"
+	OtsBlocksRewardedCounter = "OtsBlocksRewardedCounter"
+	OtsWithdrawalIdx2Block   = "OtsWithdrawalIdx2Block"
+	OtsWithdrawalsIndex      = "OtsWithdrawalsIndex"
+	OtsWithdrawalsCounter    = "OtsWithdrawalsCounter"
 )
 
 // Keys
@@ -292,6 +324,19 @@ var (
 var (
 	CommitmentLayoutFlagEnabledVal  = []byte{1}
 	CommitmentLayoutFlagDisabledVal = []byte{2}
+)
+
+// Otterscan2 address attributes
+const (
+	ADDR_ATTR_ERC20     = 0 // is ERC20 token
+	ADDR_ATTR_ERC165    = 1 // implements ERC165
+	ADDR_ATTR_ERC721    = 2 // is ERC721 token
+	ADDR_ATTR_ERC1155   = 3 // is ERC1155 token
+	ADDR_ATTR_ERC1167   = 4 // is ERC1167 proxy
+	ADDR_ATTR_ERC4626   = 5 // is ERC4626 vault
+	ADDR_ATTR_HAS_CODE  = 6 // has code
+	ADDR_ATTR_IS_MINER  = 7 // is block proposer/miner
+	ADDR_ATTR_WITHDRAWN = 8 // has withdrawals
 )
 
 // ChaindataTables - list of all buckets. App will panic if some bucket is not in this list.
@@ -424,6 +469,39 @@ var ChaindataTables = []string{
 	ActiveValidatorIndicies,
 	EffectiveBalancesDump,
 	BalancesDump,
+
+	// Otterscan2 tables
+	OtsAllContracts,
+	OtsERC20,
+	OtsERC165,
+	OtsERC721,
+	OtsERC1155,
+	OtsERC1167,
+	OtsERC4626,
+
+	OtsAllContractsCounter,
+	OtsERC20Counter,
+	OtsERC165Counter,
+	OtsERC721Counter,
+	OtsERC1155Counter,
+	OtsERC1167Counter,
+	OtsERC4626Counter,
+
+	OtsAddrAttributes,
+
+	OtsERC20TransferIndex,
+	OtsERC20TransferCounter,
+	OtsERC721TransferIndex,
+	OtsERC721TransferCounter,
+	OtsERC20Holdings,
+	OtsERC721Holdings,
+
+	OtsBlocksRewardedIndex,
+	OtsBlocksRewardedCounter,
+	OtsWithdrawalIdx2Block,
+	OtsWithdrawalsIndex,
+	OtsWithdrawalsCounter,
+
 	AccountChangeSetDeprecated,
 	StorageChangeSetDeprecated,
 	HashedAccountsDeprecated,
@@ -550,6 +628,20 @@ var ChaindataTablesCfg = TableCfg{
 	TblTracesFromIdx:  {Flags: DupSort},
 	TblTracesToKeys:   {Flags: DupSort},
 	TblTracesToIdx:    {Flags: DupSort},
+
+	// Otterscan2 tables
+	OtsAllContracts: {Flags: DupSort},
+	OtsERC20:        {Flags: DupSort},
+	OtsERC165:       {Flags: DupSort},
+	OtsERC721:       {Flags: DupSort},
+	OtsERC1155:      {Flags: DupSort},
+	OtsERC1167:      {Flags: DupSort},
+	OtsERC4626:      {Flags: DupSort},
+
+	OtsERC20TransferCounter:  {Flags: DupSort},
+	OtsERC721TransferCounter: {Flags: DupSort},
+	OtsERC20Holdings:         {Flags: DupSort},
+	OtsERC721Holdings:        {Flags: DupSort},
 }
 
 var AuRaTablesCfg = TableCfg{

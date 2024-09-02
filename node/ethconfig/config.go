@@ -282,6 +282,11 @@ type Config struct {
 
 	// fork choice update timeout
 	FcuTimeout time.Duration
+
+	DisableTxPoolGossip bool
+
+	// Otterscan2 indexers
+	Ots2 bool
 }
 
 type Sync struct {

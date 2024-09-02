@@ -166,6 +166,19 @@ func ResetWitnesses(tx kv.RwTx) error {
 var Tables = map[stages.SyncStage][]string{
 	stages.CustomTrace: {},
 	stages.Finish:      {},
+
+	// Otterscan2 stages
+	stages.OtsContractIndexer:      {kv.OtsAllContracts, kv.OtsAllContractsCounter},
+	stages.OtsERC20Indexer:         {kv.OtsERC20, kv.OtsERC20Counter},
+	stages.OtsERC165Indexer:        {kv.OtsERC165, kv.OtsERC165Counter},
+	stages.OtsERC721Indexer:        {kv.OtsERC721, kv.OtsERC721Counter},
+	stages.OtsERC1155Indexer:       {kv.OtsERC1155, kv.OtsERC1155Counter},
+	stages.OtsERC1167Indexer:       {kv.OtsERC1167, kv.OtsERC1167Counter},
+	stages.OtsERC4626Indexer:       {kv.OtsERC4626, kv.OtsERC4626Counter},
+	stages.OtsERC20And721Transfers: {kv.OtsERC20TransferIndex, kv.OtsERC20TransferCounter, kv.OtsERC721TransferIndex, kv.OtsERC721TransferCounter},
+	stages.OtsERC20And721Holdings:  {kv.OtsERC20Holdings, kv.OtsERC721Holdings},
+	stages.OtsBlocksRewarded:       {kv.OtsBlocksRewardedIndex, kv.OtsBlocksRewardedCounter},
+	stages.OtsWithdrawals:          {kv.OtsWithdrawalIdx2Block, kv.OtsWithdrawalsIndex, kv.OtsWithdrawalsCounter},
 }
 var stateBuckets = []string{
 	kv.Epoch, kv.PendingEpoch,

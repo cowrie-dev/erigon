@@ -891,6 +891,11 @@ var (
 		Usage: "Max allowed page size for search methods",
 		Value: 25,
 	}
+	OtsV2Flag = cli.BoolFlag{
+		Name:  "experimental.ots2",
+		Usage: "Enable experimental Otterscan API V2",
+		Value: false,
+	}
 
 	SilkwormExecutionFlag = cli.BoolFlag{
 		Name:  "silkworm.exec",
@@ -2007,6 +2012,8 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 		}
 		downloadernat.DoNat(nodeConfig.P2P.NAT, cfg.Downloader.ClientConfig, logger)
 	}
+
+	cfg.Ots2 = ctx.Bool(OtsV2Flag.Name)
 }
 
 // Convenience type for optional flag value representing a rate limit that should print nicely for

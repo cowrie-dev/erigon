@@ -45,6 +45,19 @@ var (
 	TxLookup          SyncStage = "TxLookup"          // Generating transactions lookup index
 	Finish            SyncStage = "Finish"            // Nominal stage after all other stages
 
+	// Otterscan2 indexer stages
+	OtsContractIndexer      SyncStage = "OtsContractIndexer"
+	OtsERC20Indexer         SyncStage = "OtsERC20Indexer"
+	OtsERC165Indexer        SyncStage = "OtsERC165Indexer"
+	OtsERC721Indexer        SyncStage = "OtsERC721Indexer"
+	OtsERC1155Indexer       SyncStage = "OtsERC1155Indexer"
+	OtsERC1167Indexer       SyncStage = "OtsERC1167Indexer"
+	OtsERC4626Indexer       SyncStage = "OtsERC4626Indexer"
+	OtsERC20And721Holdings  SyncStage = "OtsERC20And721Holdings"
+	OtsERC20And721Transfers SyncStage = "OtsERC20And721Transfers"
+	OtsBlocksRewarded       SyncStage = "OtsBlocksRewarded"
+	OtsWithdrawals          SyncStage = "OtsWithdrawals"
+
 	MiningCreateBlock SyncStage = "MiningCreateBlock"
 	MiningExecution   SyncStage = "MiningExecution"
 	MiningFinish      SyncStage = "MiningFinish"
