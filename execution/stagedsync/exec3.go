@@ -209,6 +209,7 @@ func ExecV3(ctx context.Context,
 	initialCycle bool,
 	isMining bool,
 ) (execErr error) {
+	logger.Warn("ExecV3-1")
 	inMemExec := txc.Doms != nil
 	// TODO: e35 doesn't support parallel-exec yet
 	parallel = false //nolint
@@ -289,6 +290,7 @@ func ExecV3(ctx context.Context,
 	blockNum = doms.BlockNum()
 	outputTxNum.Store(doms.TxNum())
 
+	logger.Warn("ExecV3-2")
 	if maxBlockNum < blockNum {
 		return nil
 	}
@@ -334,6 +336,7 @@ func ExecV3(ctx context.Context,
 		}
 	}
 
+	logger.Warn("ExecV3-3")
 	if maxTxNum == 0 {
 		return nil
 	}
@@ -426,6 +429,7 @@ func ExecV3(ctx context.Context,
 	blockNum = executor.domains().BlockNum()
 	outputTxNum.Store(executor.domains().TxNum())
 
+	logger.Warn("ExecV3-4")
 	if maxBlockNum < blockNum {
 		return nil
 	}
@@ -456,6 +460,7 @@ func ExecV3(ctx context.Context,
 	blockLimit := uint64(cfg.syncCfg.LoopBlockLimit)
 	var errExhausted *ErrLoopExhausted
 
+	logger.Warn("ExecV3-5")
 	const FINAL_BLOCK = math.MaxUint64
 	tracker := commitment.NewStopWatch(logger)
 	isFirstBlock := true
