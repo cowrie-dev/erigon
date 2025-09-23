@@ -31,6 +31,7 @@ import (
 	"github.com/erigontech/erigon-db/rawdb"
 	"github.com/erigontech/erigon-db/rawdb/rawdbhelpers"
 	"github.com/erigontech/erigon-db/rawdb/rawtemporaldb"
+	"github.com/erigontech/erigon-lib/commitment"
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/cmp"
 	"github.com/erigontech/erigon-lib/common/dbg"
@@ -456,8 +457,17 @@ func ExecV3(ctx context.Context,
 	var errExhausted *ErrLoopExhausted
 
 	const FINAL_BLOCK = math.MaxUint64
+	tracker := commitment.NewStopWatch(logger)
+	isFirstBlock := true
 Loop:
 	for ; blockNum <= maxBlockNum && blockNum <= FINAL_BLOCK; blockNum++ {
+		if isFirstBlock {
+			isFirstBlock = false
+		} else {
+			tracker.EndBlock()
+		}
+		tracker.StartBlock(blockNum)
+		executor.domains().SetStopWatch(tracker)
 		// set shouldGenerateChangesets=true if we are at last n blocks from maxBlockNum. this is as a safety net in chains
 		// where during initial sync we can expect bogus blocks to be imported.
 		if !shouldGenerateChangesets && shouldGenerateChangesetsForLastBlocks && blockNum > cfg.blockReader.FrozenBlocks() && blockNum+changesetSafeRange >= maxBlockNum {

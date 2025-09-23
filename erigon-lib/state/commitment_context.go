@@ -35,6 +35,13 @@ type SharedDomainsCommitmentContext struct {
 	justRestored atomic.Bool // set to true when commitment trie was just restored from snapshot
 
 	trace bool
+
+	// stopWatch *commitment.StopWatch
+}
+
+func (sdc *SharedDomainsCommitmentContext) SetStopWatch(stopWatch *commitment.StopWatch) {
+	sdc.updates.SetStopWatch(stopWatch)
+	// sdc.stopWatch = stopWatch
 }
 
 // Limits max txNum for read operations. If set to 0, all read operations will be from latest value.

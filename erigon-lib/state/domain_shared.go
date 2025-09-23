@@ -176,6 +176,10 @@ func (sd *SharedDomains) SetChangesetAccumulator(acc *StateChangeSet) {
 	}
 }
 
+func (sd *SharedDomains) SetStopWatch(stopWatch *commitment.StopWatch) {
+	sd.sdCtx.SetStopWatch(stopWatch)
+}
+
 func (sd *SharedDomains) SavePastChangesetAccumulator(blockHash common.Hash, blockNumber uint64, acc *StateChangeSet) {
 	if sd.pastChangesAccumulator == nil {
 		sd.pastChangesAccumulator = make(map[string]*StateChangeSet)

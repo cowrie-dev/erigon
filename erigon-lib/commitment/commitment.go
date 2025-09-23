@@ -949,6 +949,12 @@ type Updates struct {
 	// keyCache    *lru.ARCCache[string, []byte]
 	// cMiss, cHit uint64
 	// ticker      *time.Ticker
+
+	stopWatch *StopWatch
+}
+
+func (t *Updates) SetStopWatch(stopWatch *StopWatch) {
+	t.stopWatch = stopWatch
 }
 
 var keyCache *lru.ARCCache[string, []byte]
@@ -976,15 +982,15 @@ func init() {
 }
 
 func GetKey(key []byte) []byte {
-	c, ok := keyCache.Get(string(key))
-	if ok {
-		cHit++
-		return c
-	}
+	// c, ok := keyCache.Get(string(key))
+	// if ok {
+	// 	cHit++
+	// 	return c
+	// }
 
 	hash := ecrypto.Keccak256(key)
-	keyCache.Add(string(key), hash)
-	cMiss++
+	// keyCache.Add(string(key), hash)
+	// cMiss++
 	return hash
 }
 
@@ -1095,14 +1101,18 @@ func (t *Updates) TouchPlainKey(key string, val []byte, fn func(c *KeyUpdate, va
 			return false
 		})
 		if !updated {
+			t.stopWatch.Start()
 			pivot.hashedKey = t.hasher(toBytesZeroCopy(pivot.plainKey))
+			t.stopWatch.Stop()
 			fn(pivot, val)
 			t.tree.ReplaceOrInsert(pivot)
 		}
 	case ModeDirect:
 		if _, ok := t.keys[key]; !ok {
 			keyBytes := toBytesZeroCopy(key)
+			t.stopWatch.Start()
 			hashedKey := t.hasher(keyBytes)
+			t.stopWatch.Stop()
 
 			var err error
 			if !t.sortPerNibble {
