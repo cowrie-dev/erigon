@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/erigontech/erigon-db/rawdb"
+	"github.com/erigontech/erigon-lib/commitment"
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/dbg"
 	"github.com/erigontech/erigon-lib/common/metrics"
@@ -593,6 +594,7 @@ func (e *EthereumExecutionModule) updateForkChoice(ctx context.Context, original
 		logArgs = append(logArgs, "commit", commitTime, "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		if log {
 			e.logger.Info("head updated", logArgs...)
+			e.logger.Warn("key cache", "hit", commitment.CHit(), "miss", commitment.CMiss(), "len", commitment.KeyCacheLen())
 		}
 	}
 	if *headNumber >= startPruneFrom {

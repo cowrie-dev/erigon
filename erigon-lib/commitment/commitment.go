@@ -26,7 +26,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 	"unsafe"
 
 	"github.com/google/btree"
@@ -954,7 +953,18 @@ type Updates struct {
 
 var keyCache *lru.ARCCache[string, []byte]
 var cMiss, cHit uint64
-var ticker *time.Ticker
+
+// var ticker *time.Ticker
+
+func CMiss() uint64 {
+	return cMiss
+}
+func CHit() uint64 {
+	return cHit
+}
+func KeyCacheLen() int {
+	return keyCache.Len()
+}
 
 func init() {
 	var err error
@@ -962,16 +972,10 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	ticker = time.NewTicker(30 * time.Second)
+	// ticker = time.NewTicker(30 * time.Second)
 }
 
 func GetKey(key []byte) []byte {
-	select {
-	case <-ticker.C:
-		log.Warn("key cache", "hit", cHit, "miss", cMiss, "len", keyCache.Len())
-	default:
-	}
-
 	c, ok := keyCache.Get(string(key))
 	if ok {
 		cHit++
