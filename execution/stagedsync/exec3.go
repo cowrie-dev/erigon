@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -338,8 +339,10 @@ func ExecV3(ctx context.Context,
 
 	logger.Warn("ExecV3-3")
 	if maxTxNum == 0 {
+		debug.PrintStack()
 		return nil
 	}
+	logger.Warn("ExecV3-3.1")
 
 	applyWorker := cfg.applyWorker
 	if isMining {
@@ -460,7 +463,7 @@ func ExecV3(ctx context.Context,
 	blockLimit := uint64(cfg.syncCfg.LoopBlockLimit)
 	var errExhausted *ErrLoopExhausted
 
-	logger.Warn("ExecV3-5")
+	logger.Warn("ExecV3-5", "blockNum", blockNum, "maxBlockNum", maxBlockNum)
 	const FINAL_BLOCK = math.MaxUint64
 	tracker := commitment.NewStopWatch(logger)
 	isFirstBlock := true
@@ -825,6 +828,7 @@ Loop:
 		default:
 		}
 	}
+	logger.Warn("ExecV3-6")
 
 	//log.Info("Executed", "blocks", inputBlockNum.Load(), "txs", outputTxNum.Load(), "repeats", mxExecRepeats.GetValueUint64())
 
@@ -858,6 +862,8 @@ Loop:
 		return errExhausted
 	}
 
+	logger.Warn("ExecV3-100")
+	debug.PrintStack()
 	return nil
 }
 
