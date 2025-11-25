@@ -228,6 +228,7 @@ func (s *Sentinel) GetPeersInfos() *sentinelproto.PeersInfoResponse {
 
 	out := &sentinelproto.PeersInfoResponse{Peers: make([]*sentinelproto.Peer, 0, len(peers))}
 
+	log.Debug("[caplin sentinel] getting peers infos", "peers", len(peers))
 	for _, p := range peers {
 		entry := &sentinelproto.Peer{}
 		peerInfo := s.p2p.Host().Network().Peerstore().PeerInfo(p)
@@ -242,6 +243,7 @@ func (s *Sentinel) GetPeersInfos() *sentinelproto.PeersInfoResponse {
 		}
 		conns := s.p2p.Host().Network().ConnsToPeer(p)
 		if len(conns) == 0 {
+			log.Debug("[caplin sentinel] no conns to peer", "peer", p.String())
 			continue
 		}
 		if conns[0].Stat().Direction == network.DirOutbound {
@@ -252,11 +254,13 @@ func (s *Sentinel) GetPeersInfos() *sentinelproto.PeersInfoResponse {
 		if enr, ok := s.pidToEnr.Load(p); ok {
 			entry.Enr = enr.(string)
 		} else {
+			log.Debug("[caplin sentinel] no enode id for peer", "peer", p.String())
 			continue
 		}
 		if enodeId, ok := s.pidToEnodeId.Load(p); ok {
 			entry.EnodeId = enodeId.(enode.ID).String()
 		} else {
+			log.Debug("[caplin sentinel] no enode id for peer", "peer", p.String())
 			continue
 		}
 		agent, err := s.p2p.Host().Peerstore().Get(p, "AgentVersion")
@@ -268,6 +272,7 @@ func (s *Sentinel) GetPeersInfos() *sentinelproto.PeersInfoResponse {
 		}
 		out.Peers = append(out.Peers, entry)
 	}
+	log.Debug("[caplin sentinel] peers infos", "peers", len(out.Peers))
 	return out
 }
 
