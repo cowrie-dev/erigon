@@ -252,15 +252,9 @@ func (s *Sentinel) GetPeersInfos() *sentinelproto.PeersInfoResponse {
 		}
 		if enr, ok := s.pidToEnr.Load(p); ok {
 			entry.Enr = enr.(string)
-		} else {
-			log.Debug("[caplin sentinel] no enr for peer", "peer", p.String())
-			continue
 		}
 		if enodeId, ok := s.pidToEnodeId.Load(p); ok {
 			entry.EnodeId = enodeId.(enode.ID).String()
-		} else {
-			log.Debug("[caplin sentinel] no enode id for peer", "peer", p.String())
-			continue
 		}
 		agent, err := s.p2p.Host().Peerstore().Get(p, "AgentVersion")
 		if err == nil {
