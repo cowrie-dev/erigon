@@ -503,10 +503,9 @@ func SyncSnapshots(
 			case <-time.After(10 * time.Second):
 			}
 		}
+		log.Info(fmt.Sprintf("[%s] Downloader completed %s", logPrefix, task))
 	}
 
-	log.Info(fmt.Sprintf("[%s] Downloader completed %s", logPrefix, task))
-	log.Info(fmt.Sprintf("[%s] Synced %s", logPrefix, task))
 	return nil
 }
 

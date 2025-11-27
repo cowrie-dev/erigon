@@ -163,7 +163,6 @@ func New(
 		case 0:
 			torrentConfig.DialForPeerConns = false
 			torrentConfig.AcceptPeerConnections = false
-			torrentConfig.DisableTrackers = true
 			fallthrough
 		default:
 			torrentConfig.DownloadRateLimiter = rate.NewLimiter(value, 0)
