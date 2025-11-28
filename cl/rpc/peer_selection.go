@@ -143,7 +143,7 @@ func (c *columnDataPeers) refreshPeers(ctx context.Context) {
 			}
 
 			// get custody indices
-			var custodyIndices map[uint64]bool = make(map[uint64]bool)
+			var custodyIndices map[uint64]bool
 			if peer.EnodeId == "" {
 				// if no enode id, use all custody indices
 				custodyIndices = allCustodyIndices
