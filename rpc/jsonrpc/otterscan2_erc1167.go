@@ -1,17 +1,32 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package jsonrpc
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutil"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon/core/state"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/core/vm"
-	"github.com/ledgerwatch/erigon/rpc"
-	"github.com/ledgerwatch/erigon/turbo/rpchelper"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/state"
+	"github.com/erigontech/erigon/execution/types"
+	"github.com/erigontech/erigon/execution/vm"
 )
 
 type ERC1167Match struct {
@@ -53,11 +68,7 @@ func (api *Otterscan2APIImpl) GetERC1167List(ctx context.Context, idx, count uin
 
 func (api *Otterscan2APIImpl) newERC1167ExtraData(ctx context.Context) (ExtraDataExtractor, error) {
 	return func(tx kv.Tx, res *AddrMatch, addr common.Address, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, ibs *state.IntraBlockState, stateReader state.StateReader) (interface{}, error) {
-		acc, err := stateReader.ReadAccountData(addr)
-		if err != nil {
-			return nil, err
-		}
-		code, err := stateReader.ReadAccountCode(addr, acc.Incarnation, acc.CodeHash)
+		code, err := stateReader.ReadAccountCode(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -83,22 +94,7 @@ func (api *Otterscan2APIImpl) GetERC1167Impl(ctx context.Context, addr common.Ad
 	}
 	defer tx.Rollback()
 
-	chainConfig, err := api.chainConfig(ctx, tx)
-	if err != nil {
-		return common.Address{}, err
-	}
-	reader, err := rpchelper.CreateStateReader(ctx, tx, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber), 0, api.filters, api.stateCache, api.historyV3(tx), chainConfig.ChainName)
-	if err != nil {
-		return common.Address{}, err
-	}
-	acc, err := reader.ReadAccountData(addr)
-	if err != nil {
-		return common.Address{}, err
-	}
-	code, err := reader.ReadAccountCode(addr, acc.Incarnation, acc.CodeHash)
-	if err != nil {
-		return common.Address{}, err
-	}
-
-	return common.BytesToAddress(code[10:30]), nil
+	// TODO(ots2-rebase): CreateStateReader signature changed completely, needs TemporalTx
+	// For now, stub out to get compilation working
+	return common.Address{}, fmt.Errorf("GetERC1167Impl not yet ported - CreateStateReader API changed")
 }

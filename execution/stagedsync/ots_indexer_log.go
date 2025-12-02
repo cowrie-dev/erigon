@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -7,17 +23,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RoaringBitmap/roaring"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/eth/ethconfig/estimate"
-	"github.com/ledgerwatch/erigon/ethdb/cbor"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	roaring "github.com/RoaringBitmap/roaring/v2"
+	"github.com/erigontech/erigon/common/cbor"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/execution/types"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 )
@@ -50,200 +62,15 @@ func runConcurrentLogIndexerExecutor[T any](db kv.RoDB, tx kv.RwTx, blockReader 
 		log.Info(fmt.Sprintf("[%s] Using concurrent executor", s.LogPrefix()))
 	}
 
-	// Scans logs bucket
-	logs, err := tx.Cursor(kv.Log)
-	if err != nil {
-		return startBlock, err
-	}
-	defer logs.Close()
-
-	// Tracks how many txs finished analysis so far
-	totalTx := atomic.NewUint64(0)
-
-	// Tracks how many txs finished analysis with a match so far
-	totalMatch := atomic.NewUint64(0)
-
-	// Each worker processes all logs from 1 ethTx each time
-	workers := estimate.AlmostAllCPUs()
-	proberCh := make(chan *TxLogs[T], workers*3)
-	matchCh := make(chan *TxMatchedLogs[T], workers*3+workers) // must be >= inCh buffer size + n. of workers, otherwise can deadlock
-
-	g, gCtx := errgroup.WithContext(ctx)
-	for i := 0; i < workers; i++ {
-		createLogAnalyzerWorker(g, gCtx, db, analyzer, proberCh, matchCh, totalMatch, totalTx)
-	}
-
-	// Process control
-	flushEvery := time.NewTicker(bitmapsFlushEvery)
-	defer flushEvery.Stop()
-
-	// Get all blocks in [startBlock, endBlock] that contain at least 1 TRANSFER_TOPIC occurrence
-	blocks, err := newBlockBitmapFromTopic(tx, startBlock, endBlock, TRANSFER_TOPIC)
-	if err != nil {
-		return startBlock, err
-	}
-	defer bitmapdb.ReturnToPool(blocks)
-
-L:
-	// Iterate each block that contains a Transfer() event
-	for it := blocks.Iterator(); it.HasNext(); {
-		blockNum := uint64(it.Next())
-
-		// Avoid recalculating txid from the block basetxid for each match
-		baseTxId, err := blockReader.BaseTxIdForBlock(ctx, tx, blockNum)
-		if err != nil {
-			return startBlock, err
-		}
-
-		// Inspect each tx's logs
-		logPrefix := hexutility.EncodeTs(blockNum)
-		for k, v, err := logs.Seek(logPrefix); k != nil && bytes.HasPrefix(k, logPrefix); k, v, err = logs.Next() {
-			if err != nil {
-				return startBlock, err
-			}
-
-			txLogs := newTxLogsFromRaw[T](blockNum, baseTxId, k, v)
-		LG:
-			for {
-				select {
-				case proberCh <- txLogs:
-					break LG
-				case match := <-matchCh:
-					handler.HandleMatch(match)
-				case <-logEvery.C:
-					log.Info(fmt.Sprintf("[%s] Scanning logs", s.LogPrefix()), "block", blockNum, "matches", totalMatch, "txCount", totalTx, "inCh", len(proberCh), "outCh", len(matchCh))
-				}
-			}
-		}
-
-		select {
-		default:
-		case <-ctx.Done():
-			break L
-		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Scanning logs", s.LogPrefix()), "block", blockNum, "matches", totalMatch, "txCount", totalTx, "inCh", len(proberCh), "outCh", len(matchCh))
-		case <-flushEvery.C:
-			if err := handler.Flush(false); err != nil {
-				return startBlock, err
-			}
-		}
-	}
-
-	// Close in channel and wait for workers to finish
-	close(proberCh)
-	if err := g.Wait(); err != nil {
-		return startBlock, err
-	}
-
-	// Close out channel and drain remaining data saving them into db
-	close(matchCh)
-	for output := range matchCh {
-		handler.HandleMatch(output)
-	}
-
-	// Last (forced) flush and batch load (if applicable)
-	if err := handler.Flush(true); err != nil {
-		return startBlock, err
-	}
-	if err := handler.Load(ctx, tx); err != nil {
-		return startBlock, err
-	}
-
-	// Don't print summary if no contracts were analyzed to avoid polluting logs
-	if !isShortInterval && totalTx.Load() > 0 {
-		log.Info(fmt.Sprintf("[%s] Totals", s.LogPrefix()), "matches", totalMatch, "txCount", totalTx)
-	}
-
-	return endBlock, nil
+	// TODO(ots2-rebase): kv.Log table was removed in Erigon 3. Logs are now in ReceiptDomain.
+	// This function needs complete rewrite to use new log reading API.
+	return startBlock, fmt.Errorf("LogIndexer not yet ported to Erigon 3 - kv.Log table removed")
 }
 
 func runIncrementalLogIndexerExecutor[T any](db kv.RoDB, tx kv.RwTx, blockReader services.FullBlockReader, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, ctx context.Context, s *StageState, analyzer LogAnalyzer[T], handler LogIndexerHandler[T]) (uint64, error) {
-	if !isShortInterval {
-		log.Info(fmt.Sprintf("[%s] Using incremental executor", s.LogPrefix()))
-	}
-
-	// Scans logs bucket
-	logs, err := tx.Cursor(kv.Log)
-	if err != nil {
-		return startBlock, err
-	}
-	defer logs.Close()
-
-	// Tracks how many txs finished analysis so far
-	totalTx := atomic.NewUint64(0)
-
-	// Tracks how many txs finished analysis with a match so far
-	totalMatch := atomic.NewUint64(0)
-
-	// Process control
-	flushEvery := time.NewTicker(bitmapsFlushEvery)
-	defer flushEvery.Stop()
-
-	// Get all blocks in [startBlock, endBlock] that contain at least 1 TRANSFER_TOPIC occurrence
-	blocks, err := newBlockBitmapFromTopic(tx, startBlock, endBlock, TRANSFER_TOPIC)
-	if err != nil {
-		return startBlock, err
-	}
-	defer bitmapdb.ReturnToPool(blocks)
-
-	// Iterate each block that contains a Transfer() event
-	for it := blocks.Iterator(); it.HasNext(); {
-		blockNum := uint64(it.Next())
-
-		// Avoid recalculating txid from the block basetxid for each match
-		baseTxId, err := blockReader.BaseTxIdForBlock(ctx, tx, blockNum)
-		if err != nil {
-			return startBlock, err
-		}
-
-		// Inspect each tx's logs
-		logPrefix := hexutility.EncodeTs(blockNum)
-		for k, v, err := logs.Seek(logPrefix); k != nil && bytes.HasPrefix(k, logPrefix); k, v, err = logs.Next() {
-			if err != nil {
-				return startBlock, err
-			}
-
-			txLogs := newTxLogsFromRaw[T](blockNum, baseTxId, k, v)
-			results, err := AnalyzeLogs(tx, analyzer, txLogs.rawLogs)
-			if err != nil {
-				return startBlock, err
-			}
-
-			totalTx.Inc()
-			if len(results) > 0 {
-				totalMatch.Inc()
-				match := &TxMatchedLogs[T]{txLogs, results}
-				handler.HandleMatch(match)
-			}
-		}
-
-		select {
-		default:
-		case <-ctx.Done():
-			return startBlock, common.ErrStopped
-		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Scanning logs", s.LogPrefix()), "block", blockNum, "matches", totalMatch, "txCount", totalTx)
-		case <-flushEvery.C:
-			if err := handler.Flush(false); err != nil {
-				return startBlock, err
-			}
-		}
-	}
-
-	// Last (forced) flush and batch load (if applicable)
-	if err := handler.Flush(true); err != nil {
-		return startBlock, err
-	}
-	if err := handler.Load(ctx, tx); err != nil {
-		return startBlock, err
-	}
-
-	// Don't print summary if no contracts were analyzed to avoid polluting logs
-	if !isShortInterval && totalTx.Load() > 0 {
-		log.Info(fmt.Sprintf("[%s] Totals", s.LogPrefix()), "matches", totalMatch, "txCount", totalTx)
-	}
-
-	return endBlock, nil
+	// TODO(ots2-rebase): kv.Log table was removed in Erigon 3. Logs are now in ReceiptDomain.
+	// This function needs complete rewrite to use new log reading API.
+	return startBlock, fmt.Errorf("LogIndexer not yet ported to Erigon 3 - kv.Log table removed")
 }
 
 // Gets a bitmap with all blocks [startBlock, endBlock] that contains at least 1 occurrence of
@@ -251,16 +78,8 @@ func runIncrementalLogIndexerExecutor[T any](db kv.RoDB, tx kv.RwTx, blockReader
 //
 // The returned bitmap MUST be returned to pool after use.
 func newBlockBitmapFromTopic(tx kv.Tx, startBlock, endBlock uint64, topic []byte) (*roaring.Bitmap, error) {
-	allBlocks := bitmapdb.NewBitmap()
-	allBlocks.AddRange(uint64(startBlock), uint64(endBlock)+1)
-
-	chunkedTransfer, err := bitmapdb.Get(tx, kv.LogTopicIndex, topic, uint32(startBlock), uint32(endBlock))
-	if err != nil {
-		return nil, err
-	}
-	allBlocks.And(chunkedTransfer)
-
-	return allBlocks, nil
+	// TODO(ots2-rebase): kv.LogTopicIndex table was removed. Need to use TblLogTopicsIdx API.
+	return nil, fmt.Errorf("newBlockBitmapFromTopic not yet ported to Erigon 3")
 }
 
 // Represents a set of all raw logs of 1 transaction that'll be analyzed.

@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -8,23 +24,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/erigon/consensus"
-	"github.com/ledgerwatch/erigon/core"
-	"github.com/ledgerwatch/erigon/core/state"
-	"github.com/ledgerwatch/erigon/core/systemcontracts"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/core/vm"
-	"github.com/ledgerwatch/erigon/core/vm/evmtypes"
-	"github.com/ledgerwatch/erigon/eth/ethconfig/estimate"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/estimate"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/kv/bitmapdb"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/protocol/rules"
+	"github.com/erigontech/erigon/execution/state"
+	"github.com/erigontech/erigon/execution/types"
+	"github.com/erigontech/erigon/execution/vm"
+	"github.com/erigontech/erigon/execution/vm/evmtypes"
 )
 
 // This is a dual strategy StageExecutor which indexes deployed contracts based on a criteria determined
@@ -36,7 +51,7 @@ import (
 // During the first sync, it runs the indexer concurrently. After that, during the following syncs,
 // it runs it single-threadly, incrementaly.
 func NewConcurrentIndexerExecutor(proberFactory ProberFactory, sourceBucket, targetBucket, counterBucket string) StageExecutor {
-	return func(ctx context.Context, db kv.RoDB, tx kv.RwTx, isInternalTx bool, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine consensus.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, logger log.Logger) (uint64, error) {
+	return func(ctx context.Context, db kv.RoDB, tx kv.RwTx, isInternalTx bool, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine rules.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, logger log.Logger) (uint64, error) {
 		if startBlock == 0 && isInternalTx {
 			return runExecutorConcurrently(ctx, db, tx, chainConfig, blockReader, engine, startBlock, endBlock, isShortInterval, logEvery, s, proberFactory, sourceBucket, targetBucket, counterBucket)
 		}
@@ -44,7 +59,7 @@ func NewConcurrentIndexerExecutor(proberFactory ProberFactory, sourceBucket, tar
 	}
 }
 
-func runExecutorConcurrently(ctx context.Context, db kv.RoDB, tx kv.RwTx, chainConfig *chain.Config, blockReader services.FullBlockReader, engine consensus.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, proberFactory ProberFactory, sourceBucket, targetBucket, counterBucket string) (uint64, error) {
+func runExecutorConcurrently(ctx context.Context, db kv.RoDB, tx kv.RwTx, chainConfig *chain.Config, blockReader services.FullBlockReader, engine rules.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, proberFactory ProberFactory, sourceBucket, targetBucket, counterBucket string) (uint64, error) {
 	if !isShortInterval {
 		log.Info(fmt.Sprintf("[%s] Using concurrent executor", s.LogPrefix()))
 	}
@@ -87,7 +102,7 @@ func runExecutorConcurrently(ctx context.Context, db kv.RoDB, tx kv.RwTx, chainC
 	}
 
 	// Loop over [startBlock, endBlock]
-	k, v, err := source.Seek(hexutility.EncodeTs(startBlock))
+	k, v, err := source.Seek(hexutil.EncodeTs(startBlock))
 	if err != nil {
 		return startBlock, err
 	}
@@ -198,7 +213,7 @@ L:
 	}
 
 	// Rewind target cursor and write counters [startBlock, endBlock]
-	k, _, err = target.Seek(hexutility.EncodeTs(startBlock))
+	k, _, err = target.Seek(hexutil.EncodeTs(startBlock))
 	if err != nil {
 		return startBlock, err
 	}
@@ -232,7 +247,7 @@ L:
 	return endBlock, nil
 }
 
-func runExecutorIncrementally(ctx context.Context, tx kv.RwTx, chainConfig *chain.Config, blockReader services.FullBlockReader, engine consensus.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, proberFactory ProberFactory, sourceBucket, targetBucket, counterBucket string) (uint64, error) {
+func runExecutorIncrementally(ctx context.Context, tx kv.RwTx, chainConfig *chain.Config, blockReader services.FullBlockReader, engine rules.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, proberFactory ProberFactory, sourceBucket, targetBucket, counterBucket string) (uint64, error) {
 	if !isShortInterval {
 		log.Info(fmt.Sprintf("[%s] Using incremental executor", s.LogPrefix()))
 	}
@@ -289,7 +304,7 @@ func runExecutorIncrementally(ctx context.Context, tx kv.RwTx, chainConfig *chai
 		return h
 	}
 
-	ex := executor{
+	ex := otsIndexerExecutor{
 		ctx:         ctx,
 		tx:          tx,
 		blockReader: blockReader,
@@ -300,7 +315,7 @@ func runExecutorIncrementally(ctx context.Context, tx kv.RwTx, chainConfig *chai
 	}
 
 	// Loop over [startBlock, endBlock]
-	k, v, err := source.Seek(hexutility.EncodeTs(startBlock))
+	k, v, err := source.Seek(hexutil.EncodeTs(startBlock))
 	if err != nil {
 		return startBlock, err
 	}
@@ -501,22 +516,22 @@ func RemoveAttributes(tx kv.RwTx, addr common.Address, attrs *roaring64.Bitmap) 
 }
 
 func writeCounter(tx kv.RwTx, counterBucket string, counter, blockNum uint64) error {
-	k := hexutility.EncodeTs(counter)
-	v := hexutility.EncodeTs(blockNum)
+	k := hexutil.EncodeTs(counter)
+	v := hexutil.EncodeTs(blockNum)
 	return tx.Put(counterBucket, k, v)
 }
 
-type executor struct {
+type otsIndexerExecutor struct {
 	ctx         context.Context
 	tx          kv.Tx
 	blockReader services.FullBlockReader
 	chainConfig *chain.Config
 	getHeader   func(common.Hash, uint64) *types.Header
-	engine      consensus.Engine
+	engine      rules.Engine
 	prober      Prober
 }
 
-func createExecutor(ctx context.Context, db kv.RoDB, blockReader services.FullBlockReader, chainConfig *chain.Config, engine consensus.Engine, prober Prober, proberCh <-chan *sourceData, matchesCh chan<- *matchedData, wg *sync.WaitGroup) {
+func createExecutor(ctx context.Context, db kv.RoDB, blockReader services.FullBlockReader, chainConfig *chain.Config, engine rules.Engine, prober Prober, proberCh <-chan *sourceData, matchesCh chan<- *matchedData, wg *sync.WaitGroup) {
 	go func() {
 		defer wg.Done()
 
@@ -536,7 +551,7 @@ func createExecutor(ctx context.Context, db kv.RoDB, blockReader services.FullBl
 			return h
 		}
 
-		ex := executor{
+		ex := otsIndexerExecutor{
 			ctx:         ctx,
 			tx:          tx,
 			blockReader: blockReader,
@@ -565,7 +580,7 @@ func createExecutor(ctx context.Context, db kv.RoDB, blockReader services.FullBl
 	}()
 }
 
-func (ex *executor) ResetAndProbe(blockNumber uint64, addr common.Address, k, v []byte) (*roaring64.Bitmap, error) {
+func (ex *otsIndexerExecutor) ResetAndProbe(blockNumber uint64, addr common.Address, k, v []byte) (*roaring64.Bitmap, error) {
 	header, err := ex.blockReader.HeaderByNumber(ex.ctx, ex.tx, blockNumber)
 	if err != nil {
 		return nil, err
@@ -576,11 +591,21 @@ func (ex *executor) ResetAndProbe(blockNumber uint64, addr common.Address, k, v 
 		return nil, nil
 	}
 
-	stateReader := state.NewPlainState(ex.tx, blockNumber+1, systemcontracts.SystemContractCodeLookup[ex.chainConfig.ChainName])
-	defer stateReader.Dispose()
+	// TODO(ots2-rebase): PlainState.Dispose() removed
+	// defer stateReader.Dispose()
 
-	ibs := state.New(stateReader)
-	blockCtx := core.NewEVMBlockContext(header, core.GetHashFn(header, ex.getHeader), ex.engine, nil /* author */)
+	// TODO(ots2-rebase): state.New() signature may have changed
+	ibs := state.New(nil) // TODO: pass proper state reader
+
+	// TODO(ots2-rebase): NewEVMBlockContext now requires beneficiary and chainConfig
+	getHashFn := func(n uint64) (common.Hash, error) {
+		h := ex.getHeader(common.Hash{}, n)
+		if h == nil {
+			return common.Hash{}, nil
+		}
+		return h.Hash(), nil
+	}
+	blockCtx := protocol.NewEVMBlockContext(header, getHashFn, ex.engine, nil /* author */, ex.chainConfig)
 	evm := vm.NewEVM(blockCtx, evmtypes.TxContext{}, ibs, ex.chainConfig, vm.Config{})
 
 	return ex.prober.Probe(ex.ctx, evm, header, ex.chainConfig, ibs, blockNumber, addr, k, v)

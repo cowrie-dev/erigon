@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package jsonrpc
 
 import (
@@ -6,11 +22,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/kv/bitmapdb"
 )
 
 type SearchResultMaterializer[T any] interface {
@@ -51,7 +67,7 @@ func genericResultList[T any](ctx context.Context, tx kv.Tx, addr common.Address
 		return nil, err
 	}
 	if k == nil {
-		return nil, fmt.Errorf("db possibly corrupted, couldn't find chunkKey %s on bucket %s", hexutility.Encode(chunkKey), indexBucket)
+		return nil, fmt.Errorf("db possibly corrupted, couldn't find chunkKey %s on bucket %s", hexutil.Encode(chunkKey), indexBucket)
 	}
 
 	bm := bitmapdb.NewBitmap64()
@@ -105,7 +121,7 @@ func genericResultList[T any](ctx context.Context, tx kv.Tx, addr common.Address
 
 // Given an index, locates the counter chunk which should contain the desired index (>= index)
 func findNextCounter(counter kv.CursorDupSort, addr common.Address, idx uint64) (uint64, []byte, error) {
-	v, err := counter.SeekBothRange(addr.Bytes(), hexutility.EncodeTs(idx))
+	v, err := counter.SeekBothRange(addr.Bytes(), hexutil.EncodeTs(idx))
 	if err != nil {
 		return 0, nil, err
 	}

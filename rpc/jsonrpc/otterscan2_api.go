@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package jsonrpc
 
 import (
@@ -5,22 +21,21 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/execution/abi"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/state"
+	"github.com/erigontech/erigon/execution/types"
+	"github.com/erigontech/erigon/execution/vm"
+	"github.com/erigontech/erigon/execution/vm/evmtypes"
+	"github.com/erigontech/erigon/rpc"
+	"github.com/erigontech/erigon/rpc/ethapi"
+	"github.com/erigontech/erigon/rpc/rpchelper"
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutil"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon/accounts/abi"
-	"github.com/ledgerwatch/erigon/core"
-	"github.com/ledgerwatch/erigon/core/state"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/core/vm"
-	"github.com/ledgerwatch/erigon/core/vm/evmtypes"
-	"github.com/ledgerwatch/erigon/rpc"
-	"github.com/ledgerwatch/erigon/turbo/adapter/ethapi"
-	"github.com/ledgerwatch/erigon/turbo/rpchelper"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type Otterscan2API interface {
@@ -154,9 +169,10 @@ func (api *Otterscan2APIImpl) genericExtraData(ctx context.Context, tx kv.Tx, re
 	defer ticker.Stop()
 
 	var evm *vm.EVM
-	stateReader := state.NewPlainStateReader(tx)
+	// TODO(ots2-rebase): NewPlainStateReader removed - state reading API changed
+	// stateReader := state.NewPlainStateReader(tx)
 	// var ibs *state.IntraBlockState
-	ibs := state.New(stateReader)
+	ibs := state.New(nil) // TODO: need proper state reader
 	prevBlock := uint64(0)
 
 	blockReader := api._blockReader
@@ -173,7 +189,7 @@ func (api *Otterscan2APIImpl) genericExtraData(ctx context.Context, tx kv.Tx, re
 	}
 	engine := api.engine()
 
-	blockNumber, hash, _, err := rpchelper.GetCanonicalBlockNumber(rpc.BlockNumberOrHashWithNumber(rpc.LatestExecutedBlockNumber), tx, nil)
+	blockNumber, hash, _, err := rpchelper.GetCanonicalBlockNumber(ctx, rpc.BlockNumberOrHashWithNumber(rpc.LatestExecutedBlockNumber), tx, api._blockReader, api.filters)
 	if err != nil {
 		return nil, err
 	}
@@ -200,23 +216,39 @@ func (api *Otterscan2APIImpl) genericExtraData(ctx context.Context, tx kv.Tx, re
 			return nil, fmt.Errorf("couldn't find header for block %d", originalBlockNum)
 		}
 
-		if stateReader == nil {
-			// stateReader = state.NewPlainStateReader(tx)
-			// stateReader = state.NewPlainState(tx, originalBlockNum+1, systemcontracts.SystemContractCodeLookup[chainConfig.ChainName])
-			// ibs = state.New(stateReader)
-		} else if originalBlockNum != prevBlock {
-			// stateReader.SetBlockNr(originalBlockNum + 1)
-			// ibs.Reset()
-		}
+		// TODO(ots2-rebase): All state reading code commented out - NewPlainState/NewPlainStateReader removed
+		// if stateReader == nil {
+		// 	stateReader = state.NewPlainStateReader(tx)
+		// 	ibs = state.New(stateReader)
+		// } else if originalBlockNum != prevBlock {
+		// 	stateReader.SetBlockNr(originalBlockNum + 1)
+		// 	ibs.Reset()
+		// }
 
 		if evm == nil {
-			blockCtx := core.NewEVMBlockContext(header, core.GetHashFn(header, getHeader), engine, nil /* author */)
+			getHashFn := func(n uint64) (common.Hash, error) {
+				h := getHeader(common.Hash{}, n)
+				if h == nil {
+					return common.Hash{}, nil
+				}
+				return h.Hash(), nil
+			}
+			blockCtx := protocol.NewEVMBlockContext(header, getHashFn, engine, nil /* author */, chainConfig)
 			evm = vm.NewEVM(blockCtx, evmtypes.TxContext{}, ibs, chainConfig, vm.Config{NoBaseFee: true})
 		} else {
 			if originalBlockNum != prevBlock {
 				// reset block
-				blockCtx := core.NewEVMBlockContext(header, core.GetHashFn(header, getHeader), engine, nil /* author */)
-				evm.ResetBetweenBlocks(blockCtx, evmtypes.TxContext{}, ibs, vm.Config{NoBaseFee: true}, chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Time))
+				getHashFn := func(n uint64) (common.Hash, error) {
+					h := getHeader(common.Hash{}, n)
+					if h == nil {
+						return common.Hash{}, nil
+					}
+					return h.Hash(), nil
+				}
+				blockCtx := protocol.NewEVMBlockContext(header, getHashFn, engine, nil /* author */, chainConfig)
+				// TODO(ots2-rebase): ResetBetweenBlocks now requires *chain.Rules parameter
+				// Using nil for now - may cause runtime issues
+				evm.ResetBetweenBlocks(blockCtx, evmtypes.TxContext{}, ibs, vm.Config{NoBaseFee: true}, nil)
 			}
 		}
 		prevBlock = originalBlockNum
@@ -224,7 +256,7 @@ func (api *Otterscan2APIImpl) genericExtraData(ctx context.Context, tx kv.Tx, re
 
 		addr := r.Address
 		ibs.Reset()
-		extra, err := extraData(tx, &r, *addr, evm, header, chainConfig, ibs, stateReader)
+		extra, err := extraData(tx, &r, *addr, evm, header, chainConfig, ibs, nil /* stateReader */)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +276,7 @@ func decodeReturnData(ctx context.Context, addr *common.Address, data []byte, me
 	gas := hexutil.Uint64(header.GasLimit)
 	args := ethapi.CallArgs{
 		To:   addr,
-		Data: (*hexutility.Bytes)(&data),
+		Data: (*hexutil.Bytes)(&data),
 		Gas:  &gas,
 	}
 	ret, err := probeContract(ctx, evm, header, chainConfig, ibs, args)
@@ -269,7 +301,7 @@ func decodeReturnData(ctx context.Context, addr *common.Address, data []byte, me
 	return retVal[0], nil
 }
 
-func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, state *state.IntraBlockState, args ethapi.CallArgs) (*core.ExecutionResult, error) {
+func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, state *state.IntraBlockState, args ethapi.CallArgs) (*evmtypes.ExecutionResult, error) {
 	var baseFee *uint256.Int
 	if header != nil && header.BaseFee != nil {
 		var overflow bool
@@ -283,12 +315,13 @@ func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chain
 		return nil, err
 	}
 
-	txCtx := core.NewEVMTxContext(msg)
+	txCtx := protocol.NewEVMTxContext(msg)
 	state.Reset()
 	evm.Reset(txCtx, state)
 
-	gp := new(core.GasPool).AddGas(msg.Gas())
-	result, err := core.ApplyMessage(evm, msg, gp, true /* refunds */, false /* gasBailout */)
+	gp := new(protocol.GasPool).AddGas(msg.Gas())
+	// TODO(ots2-rebase): ApplyMessage now requires rules.Engine parameter
+	result, err := protocol.ApplyMessage(evm, msg, gp, true /* refunds */, false /* gasBailout */, nil)
 	if err != nil {
 		return nil, err
 	}

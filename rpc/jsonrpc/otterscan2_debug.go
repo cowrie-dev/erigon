@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package jsonrpc
 
 import (
@@ -6,12 +22,12 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/execution/stagedsync/stages"
 )
 
 func (api *Otterscan2APIImpl) TransferIntegrityChecker(ctx context.Context) error {
@@ -68,7 +84,7 @@ func (api *Otterscan2APIImpl) checkTransferIntegrity(tx kv.Tx, indexBucket, coun
 
 		// Address must match on index and counter
 		if !bytes.Equal(addr, ck) {
-			log.Warn("Integrity checker: counter bucket has different address", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: counter bucket has different address", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 
@@ -89,11 +105,11 @@ func (api *Otterscan2APIImpl) checkTransferIntegrity(tx kv.Tx, indexBucket, coun
 		if len(cv) != length.Counter+length.Chunk {
 			// Optimization is only allowed on 1st and unique counter of each address
 			if !changedAddress || !shouldBeSingleChunk {
-				log.Warn("Integrity checker: counter is optimized, but has multiple duplicates", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv), "c", expectedAddrCount)
+				log.Warn("Integrity checker: counter is optimized, but has multiple duplicates", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv), "c", expectedAddrCount)
 				return nil
 			}
 			if len(cv) != 1 {
-				log.Warn("Integrity checker: invalid optimized counter format", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+				log.Warn("Integrity checker: invalid optimized counter format", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 				return nil
 			}
 
@@ -105,36 +121,36 @@ func (api *Otterscan2APIImpl) checkTransferIntegrity(tx kv.Tx, indexBucket, coun
 			counterChunk = cv[length.Counter:]
 		}
 		if !bytes.Equal(chunk, counterChunk) {
-			log.Warn("Integrity checker: chunks don't match", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: chunks don't match", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 
 		// Chunk data must obey standard format
 		// Multiple of 8 bytes
 		if uint64(len(v))%8 != 0 {
-			log.Warn("Integrity checker: chunk bucket has multiple of 8 data", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: chunk bucket has multiple of 8 data", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 		// Last id must be equal to chunk (unless it is 0xffff...)
 		if binary.BigEndian.Uint64(chunk) != ^uint64(0) && !bytes.Equal(chunk, v[len(v)-length.Chunk:]) {
-			log.Warn("Integrity checker: last value in chunk doesn't match", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: last value in chunk doesn't match", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 		// Last chunk must be 0xffff...
 		if addrCount == expectedAddrCount && binary.BigEndian.Uint64(chunk) != ^uint64(0) {
-			log.Warn("Integrity checker: last chunk is not 0xffff...", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: last chunk is not 0xffff...", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 		// Mid-chunk can't be 0xffff....
 		if addrCount != expectedAddrCount && binary.BigEndian.Uint64(chunk) == ^uint64(0) {
-			log.Warn("Integrity checker: mid chunk can't be 0xffff...", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+			log.Warn("Integrity checker: mid chunk can't be 0xffff...", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 			return nil
 		}
 
 		// Prev count + card must be == newCount
 		card := uint64(len(v)) / 8
 		if accCount+card != newCount {
-			log.Warn("Integrity checker: new count doesn't match", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv), "card", card, "prev", accCount)
+			log.Warn("Integrity checker: new count doesn't match", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv), "card", card, "prev", accCount)
 			return nil
 		}
 		accCount = newCount
@@ -143,7 +159,7 @@ func (api *Otterscan2APIImpl) checkTransferIntegrity(tx kv.Tx, indexBucket, coun
 		for i := 0; i < len(v); i += 8 {
 			val := binary.BigEndian.Uint64(v[i : i+8])
 			if val <= maxPrev {
-				log.Warn("Integrity checker: chunk data is not sorted asc", "index", indexBucket, "counter", counterBucket, "k", hexutility.Encode(k), "v", hexutility.Encode(v), "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+				log.Warn("Integrity checker: chunk data is not sorted asc", "index", indexBucket, "counter", counterBucket, "k", hexutil.Encode(k), "v", hexutil.Encode(v), "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 				return nil
 			}
 			maxPrev = val
@@ -169,7 +185,7 @@ func (api *Otterscan2APIImpl) checkTransferIntegrity(tx kv.Tx, indexBucket, coun
 		}
 	}
 	if ck != nil {
-		log.Warn("Integrity checker: index bucket EOF, counter bucket still has data", "index", indexBucket, "counter", counterBucket, "ck", hexutility.Encode(ck), "cv", hexutility.Encode(cv))
+		log.Warn("Integrity checker: index bucket EOF, counter bucket still has data", "index", indexBucket, "counter", counterBucket, "ck", hexutil.Encode(ck), "cv", hexutil.Encode(cv))
 	}
 	log.Info("Integrity checker finished")
 
@@ -224,7 +240,7 @@ func (api *Otterscan2APIImpl) checkHoldingsIntegrity(ctx context.Context, tx kv.
 	for k != nil {
 		ethTx := binary.BigEndian.Uint64(v[length.Addr:])
 		if ethTx >= baseTxId {
-			return fmt.Errorf("integrity checker: stageBlockNum=%d bucket=%s holder=%s token=%s ethTx=%d maxEthTx=%d", blockNum, indexBucket, hexutility.Encode(k), hexutility.Encode(v[:length.Addr]), ethTx, baseTxId)
+			return fmt.Errorf("integrity checker: stageBlockNum=%d bucket=%s holder=%s token=%s ethTx=%d maxEthTx=%d", blockNum, indexBucket, hexutil.Encode(k), hexutil.Encode(v[:length.Addr]), ethTx, baseTxId)
 		}
 
 		k, v, err = index.NextDup()

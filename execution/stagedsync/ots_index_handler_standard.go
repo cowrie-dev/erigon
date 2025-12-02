@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -5,16 +21,48 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/etl"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/erigon/ots/indexer"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/db/etl"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/kv/bitmapdb"
+	"github.com/erigontech/erigon/ots/indexer"
 )
+
+const (
+	bitmapsBufLimit   = uint64(256 * 1024 * 1024) // 256MB
+	bitmapsFlushEvery = 30 * time.Second
+)
+
+// TODO(ots2-rebase): needFlush64 was removed. Need to implement proper bitmap size checking.
+func needFlush64(bitmaps map[string]*roaring64.Bitmap, limit uint64) bool {
+	var size uint64
+	for _, bm := range bitmaps {
+		size += bm.GetSerializedSizeInBytes()
+		if size >= limit {
+			return true
+		}
+	}
+	return false
+}
+
+// TODO(ots2-rebase): flushBitmaps64 was removed. Need to implement proper bitmap flushing.
+func flushBitmaps64(collector *etl.Collector, bitmaps map[string]*roaring64.Bitmap) error {
+	for addr, bm := range bitmaps {
+		buf := bytes.NewBuffer(nil)
+		if _, err := bm.WriteTo(buf); err != nil {
+			return err
+		}
+		if err := collector.Collect([]byte(addr), buf.Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Standard (in a meaning everyone is meant to use it) implementation of
 // IndexHandler
@@ -89,7 +137,7 @@ func (h *StandardIndexHandler) Load(ctx context.Context, tx kv.RwTx) error {
 					return err
 				}
 				if c != 1 {
-					return fmt.Errorf("db possibly corrupted: bucket=%s addr=%s has optimized counter with duplicates", h.counterBucket, hexutility.Encode(addr))
+					return fmt.Errorf("db possibly corrupted: bucket=%s addr=%s has optimized counter with duplicates", h.counterBucket, hexutil.Encode(addr))
 				}
 
 				isUniqueChunk = true
@@ -98,7 +146,7 @@ func (h *StandardIndexHandler) Load(ctx context.Context, tx kv.RwTx) error {
 				chunk := counterV[8:]
 				chunkAsNumber := binary.BigEndian.Uint64(chunk)
 				if chunkAsNumber != ^uint64(0) {
-					return fmt.Errorf("db possibly corrupted: bucket=%s addr=%s last chunk is not 0xffffffffffffffff: %s", h.counterBucket, hexutility.Encode(addr), hexutility.Encode(chunk))
+					return fmt.Errorf("db possibly corrupted: bucket=%s addr=%s last chunk is not 0xffffffffffffffff: %s", h.counterBucket, hexutil.Encode(addr), hexutil.Encode(chunk))
 				}
 			}
 

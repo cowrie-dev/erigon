@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -5,11 +21,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/execution/types"
 )
 
 type BodyIndexerHandler interface {
@@ -31,7 +47,7 @@ func runIncrementalBodyIndexerExecutor(db kv.RoDB, tx kv.RwTx, blockReader servi
 
 	// Iterate over all blocks [startBlock, endBlock]
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
-		hash, err := blockReader.CanonicalHash(ctx, tx, blockNum)
+		hash, _, err := blockReader.CanonicalHash(ctx, tx, blockNum)
 		if err != nil {
 			return startBlock, err
 		}

@@ -1,16 +1,31 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package jsonrpc
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutil"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon/core/rawdb"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/eth/ethutils"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/execution/types/ethutils"
+	"github.com/erigontech/erigon/rpc/ethapi"
 )
 
 type TransactionListResult struct {
@@ -20,7 +35,7 @@ type TransactionListResult struct {
 
 type TransactionMatch struct {
 	Hash        common.Hash            `json:"hash"`
-	Transaction *RPCTransaction        `json:"transaction"`
+	Transaction *ethapi.RPCTransaction `json:"transaction"`
 	Receipt     map[string]interface{} `json:"receipt"`
 }
 
@@ -34,7 +49,7 @@ func (m *transactionSearchResultMaterializer) Convert(ctx context.Context, tx kv
 		return nil, err
 	}
 
-	blockNum, _, err := m.api.txnLookup(ctx, tx, txn.Hash())
+	blockNum, _, _, err := m.api.txnLookup(ctx, tx, txn.Hash())
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +58,7 @@ func (m *transactionSearchResultMaterializer) Convert(ctx context.Context, tx kv
 		return nil, err
 	}
 	if block == nil {
-		return nil, nil // not error, see https://github.com/ledgerwatch/erigon/issues/1645
+		return nil, nil // not error, see https://github.com/erigontech/erigon/issues/1645
 	}
 
 	receipt, err := m.api._getTransactionReceipt(ctx, tx, txn.Hash())
@@ -53,7 +68,7 @@ func (m *transactionSearchResultMaterializer) Convert(ctx context.Context, tx kv
 
 	result := &TransactionMatch{
 		Hash:        txn.Hash(),
-		Transaction: NewRPCTransaction(txn, block.Hash(), blockNum, 0, block.BaseFee()),
+		Transaction: ethapi.NewRPCTransaction(txn, block.Hash(), blockNum, 0, block.BaseFee()),
 		Receipt:     receipt,
 	}
 	return result, nil
@@ -97,7 +112,7 @@ func (api *Otterscan2APIImpl) genericTransferList(ctx context.Context, addr comm
 
 	blocks := make([]hexutil.Uint64, 0, len(ret))
 	for _, r := range ret {
-		blockNum, ok, err := api.txnLookup(ctx, tx, r.Hash)
+		blockNum, _, ok, err := api.txnLookup(ctx, tx, r.Hash)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +137,7 @@ func (api *Otterscan2APIImpl) _getTransactionReceipt(ctx context.Context, tx kv.
 	var blockNum uint64
 	var ok bool
 
-	blockNum, ok, err := api.txnLookup(ctx, tx, txnHash)
+	blockNum, _, ok, err := api.txnLookup(ctx, tx, txnHash)
 	if err != nil {
 		return nil, err
 	}
@@ -138,16 +153,19 @@ func (api *Otterscan2APIImpl) _getTransactionReceipt(ctx context.Context, tx kv.
 
 	// if not ok and cc.Bor != nil then we might have a bor transaction.
 	// Note that Private API returns 0 if transaction is not found.
+	// TODO(ots2-rebase): ReadBorTxLookupEntry removed - Bor tx lookup changed
+	// if !ok || blockNum == 0 {
+	// 	blockNumPtr, err := rawdb.ReadBorTxLookupEntry(tx, txnHash)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if blockNumPtr == nil {
+	// 		return nil, nil
+	// 	}
+	// 	blockNum = *blockNumPtr
+	// }
 	if !ok || blockNum == 0 {
-		blockNumPtr, err := rawdb.ReadBorTxLookupEntry(tx, txnHash)
-		if err != nil {
-			return nil, err
-		}
-		if blockNumPtr == nil {
-			return nil, nil
-		}
-
-		blockNum = *blockNumPtr
+		return nil, nil // Transaction not found
 	}
 
 	block, err := api.blockByNumberWithSenders(ctx, tx, blockNum)
@@ -155,46 +173,43 @@ func (api *Otterscan2APIImpl) _getTransactionReceipt(ctx context.Context, tx kv.
 		return nil, err
 	}
 	if block == nil {
-		return nil, nil // not error, see https://github.com/ledgerwatch/erigon/issues/1645
+		return nil, nil // not error, see https://github.com/erigontech/erigon/issues/1645
 	}
 
 	var txnIndex uint64
-	var txn types.Transaction
+	found := false
 	for idx, transaction := range block.Transactions() {
 		if transaction.Hash() == txnHash {
-			txn = transaction
+			found = true
 			txnIndex = uint64(idx)
 			break
 		}
 	}
 
-	var borTx types.Transaction
-	// if txn == nil {
-	// 	borTx = rawdb.ReadBorTransactionForBlock(tx, block)
-	// 	if borTx == nil {
-	// 		return nil, nil
-	// 	}
-	// }
+	if !found {
+		return nil, nil // Transaction not found in block
+	}
 
-	receipts, err := api.getReceipts(ctx, tx, block, block.Body().SendersFromTxs())
+	receipts, err := api.getReceipts(ctx, tx.(kv.TemporalTx), block)
 	if err != nil {
 		return nil, fmt.Errorf("getReceipts error: %w", err)
 	}
 
-	if txn == nil {
-		borReceipt, err := rawdb.ReadBorReceipt(tx, block.Hash(), blockNum, receipts)
-		if err != nil {
-			return nil, err
-		}
-		if borReceipt == nil {
-			return nil, nil
-		}
-		return ethutils.MarshalReceipt(borReceipt, borTx, cc, block.HeaderNoCopy(), txnHash, false), nil
-	}
+	// TODO(ots2-rebase): Bor-specific code removed - ReadBorReceipt no longer exists
+	// if txn == nil {
+	// 	borReceipt, err := rawdb.ReadBorReceipt(tx, block.Hash(), blockNum, receipts)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if borReceipt == nil {
+	// 		return nil, nil
+	// 	}
+	// 	return ethutils.MarshalReceipt(borReceipt, borTx, cc, block.HeaderNoCopy(), txnHash, false, false), nil
+	// }
 
 	if len(receipts) <= int(txnIndex) {
 		return nil, fmt.Errorf("block has less receipts than expected: %d <= %d, block: %d", len(receipts), int(txnIndex), blockNum)
 	}
 
-	return ethutils.MarshalReceipt(receipts[txnIndex], block.Transactions()[txnIndex], cc, block.HeaderNoCopy(), txnHash, true), nil
+	return ethutils.MarshalReceipt(receipts[txnIndex], block.Transactions()[txnIndex], cc, block.HeaderNoCopy(), txnHash, true, false), nil
 }

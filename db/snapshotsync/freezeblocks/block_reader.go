@@ -1280,90 +1280,21 @@ func (r *BlockReader) TxnByIdxInBlock(ctx context.Context, tx kv.Getter, blockNu
 }
 
 func (r *BlockReader) TxnByTxId(ctx context.Context, tx kv.Getter, txId uint64) (txn types.Transaction, err error) {
-	blocksAvailable := r.sn.BlocksAvailable()
-	view := r.sn.View()
-	defer view.Close()
-
-	// Determine the max baseTxId from highest snapshot body in order to
-	// decide if the desired txId is on DB or snapshots
-	max := uint64(0)
-	if blocksAvailable > 0 {
-		seg, ok := view.BodiesSegment(blocksAvailable)
-		if !ok {
-			return nil, nil
-		}
-		b, _, err := r.bodyForStorageFromSnapshot(blocksAvailable, seg, nil)
-		if err != nil {
-			return nil, err
-		}
-		max = b.BaseTxId + 2 + uint64(b.TxAmount)
-	}
-
-	// Tx is in the DB
-	if txId > max {
-		txs, err := rawdb.CanonicalTransactions(tx, txId, 1)
-		if err != nil {
-			return nil, err
-		}
-		return txs[0], nil
-	}
-
-	// Tx in in snapshots
-	for _, seg := range view.Txs() {
-		if txId >= seg.indexes[0].BaseDataID() && txId < seg.indexes[0].BaseDataID()+seg.indexes[0].KeyCount() {
-			txn, err = r.txnByID(txId, seg, nil)
-			if err != nil {
-				return nil, err
-			}
-			return txn, nil
-		}
-	}
-	return nil, nil
+	// TODO(ots2-rebase): This method needs to be reimplemented for Erigon 3.
+	// The BodyForStorage struct no longer has BaseTxId/TxAmount fields,
+	// and snapshot segments have a different API.
+	return nil, fmt.Errorf("TxnByTxId not yet ported to Erigon 3")
 }
 
 func (r *BlockReader) TxIdByIdxInBlock(ctx context.Context, tx kv.Getter, blockNum uint64, i int) (txid uint64, err error) {
-	baseTxid, err := r.BaseTxIdForBlock(ctx, tx, blockNum)
-	if err != nil {
-		return 0, err
-	}
-	return baseTxid + 1 + uint64(i), nil
+	// TODO(ots2-rebase): This method needs to be reimplemented for Erigon 3.
+	return 0, fmt.Errorf("TxIdByIdxInBlock not yet ported to Erigon 3")
 }
 
 func (r *BlockReader) BaseTxIdForBlock(ctx context.Context, tx kv.Getter, blockNum uint64) (txid uint64, err error) {
-	blocksAvailable := r.sn.BlocksAvailable()
-	if blocksAvailable == 0 || blockNum > blocksAvailable {
-		canonicalHash, err := rawdb.ReadCanonicalHash(tx, blockNum)
-		if err != nil {
-			return 0, err
-		}
-
-		var k [length.BlockNum + length.Hash]byte
-		binary.BigEndian.PutUint64(k[:], blockNum)
-		copy(k[length.BlockNum:], canonicalHash[:])
-
-		b, err := rawdb.ReadBodyForStorageByKey(tx, k[:])
-		if err != nil {
-			return 0, err
-		}
-		if b == nil {
-			return 0, nil
-		}
-
-		return b.BaseTxId, nil
-	}
-
-	view := r.sn.View()
-	defer view.Close()
-	seg, ok := view.BodiesSegment(blockNum)
-	if !ok {
-		return 0, nil
-	}
-
-	b, _, err := r.bodyForStorageFromSnapshot(blockNum, seg, nil)
-	if err != nil {
-		return 0, err
-	}
-	return b.BaseTxId, nil
+	// TODO(ots2-rebase): This method needs to be reimplemented for Erigon 3.
+	// The BodyForStorage struct no longer has BaseTxId field.
+	return 0, fmt.Errorf("BaseTxIdForBlock not yet ported to Erigon 3")
 }
 
 // TxnLookup - find blockNumber and txnID by txnHash

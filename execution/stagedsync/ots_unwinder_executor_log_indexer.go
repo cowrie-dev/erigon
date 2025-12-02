@@ -1,17 +1,29 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/services"
 )
 
 func NewGenericLogIndexerUnwinder() UnwindExecutor {
@@ -86,88 +98,14 @@ func (u *TransferLogIndexerUnwinder) Dispose() error {
 }
 
 func runLogUnwind(ctx context.Context, tx kv.RwTx, blockReader services.FullBlockReader, isShortInterval bool, logEvery *time.Ticker, u *UnwindState, topic []byte, unwinders []UnwindHandler) error {
-	analyzer, err := NewTransferLogAnalyzer()
-	if err != nil {
-		return err
-	}
-
-	logs, err := tx.Cursor(kv.Log)
-	if err != nil {
-		return err
-	}
-	defer logs.Close()
-
-	// The unwind interval is ]u.UnwindPoint, EOF]
-	startBlock := u.UnwindPoint + 1
-
-	// Traverse blocks logs [startBlock, EOF], determine txs that should've matched the criteria,
-	// their logs, and their addresses.
-	blocks, err := newBlockBitmapFromTopic(tx, startBlock, u.CurrentBlockNumber, topic)
-	if err != nil {
-		return err
-	}
-	defer bitmapdb.ReturnToPool(blocks)
-
-	for it := blocks.Iterator(); it.HasNext(); {
-		blockNum := uint64(it.Next())
-
-		// Avoid recalculating txid from the block basetxid for each match
-		baseTxId, err := blockReader.BaseTxIdForBlock(ctx, tx, blockNum)
-		if err != nil {
-			return err
-		}
-
-		// Inspect each block's tx logs
-		logPrefix := hexutility.EncodeTs(blockNum)
-		k, v, err := logs.Seek(logPrefix)
-		if err != nil {
-			return err
-		}
-		for k != nil && bytes.HasPrefix(k, logPrefix) {
-			txLogs := newTxLogsFromRaw[TransferAnalysisResult](blockNum, baseTxId, k, v)
-			results, err := AnalyzeLogs[TransferAnalysisResult](tx, analyzer, txLogs.rawLogs)
-			if err != nil {
-				return err
-			}
-
-			if len(results) > 0 {
-				for _, unwinder := range unwinders {
-					if err := unwinder.Unwind(tx, results, txLogs.ethTx); err != nil {
-						return err
-					}
-				}
-			}
-
-			select {
-			default:
-			case <-ctx.Done():
-				return common.ErrStopped
-			case <-logEvery.C:
-				log.Info("Unwinding log indexer", "blockNum", blockNum)
-			}
-
-			k, v, err = logs.Next()
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
+	// TODO(ots2-rebase): kv.Log table removed
+	return fmt.Errorf("log unwinder not yet ported - kv.Log removed")
 }
 
+// Unwind implements UnwindHandler interface
 func (u *TransferLogIndexerUnwinder) Unwind(tx kv.RwTx, results []*TransferAnalysisResult, ethTx uint64) error {
-	for _, r := range results {
-		if err := r.Unwind(tx, u.isNFT, u, ethTx); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (u *TransferLogIndexerUnwinder) UnwindAddressHolding(tx kv.RwTx, addr, token common.Address, ethTx uint64) error {
-	return fmt.Errorf("NOT IMPLEMENTED; SHOULDN'T BE CALLED")
+	// TODO(ots2-rebase): This needs to be implemented for log-based unwinding
+	return fmt.Errorf("TransferLogIndexerUnwinder.Unwind not yet ported")
 }
 
 func (u *TransferLogIndexerUnwinder) UnwindAddress(tx kv.RwTx, addr common.Address, ethTx uint64) error {

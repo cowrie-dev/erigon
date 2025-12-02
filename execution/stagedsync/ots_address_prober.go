@@ -1,21 +1,37 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/execution/abi"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/state"
+	"github.com/erigontech/erigon/execution/types"
+	"github.com/erigontech/erigon/execution/vm"
+	"github.com/erigontech/erigon/execution/vm/evmtypes"
+	"github.com/erigontech/erigon/rpc/ethapi"
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutil"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon/accounts/abi"
-	"github.com/ledgerwatch/erigon/core"
-	"github.com/ledgerwatch/erigon/core/state"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/core/vm"
-	"github.com/ledgerwatch/erigon/turbo/adapter/ethapi"
 )
 
 // A Prober evaluates the contents of a certain address and determines if it passes or fails the test
@@ -51,7 +67,7 @@ func probeContractWithArgs(ctx context.Context, evm *vm.EVM, header *types.Heade
 	gas := hexutil.Uint64(header.GasLimit)
 	args := ethapi.CallArgs{
 		To:   &addr,
-		Data: (*hexutility.Bytes)(data),
+		Data: (*hexutil.Bytes)(data),
 		Gas:  &gas,
 	}
 
@@ -72,12 +88,12 @@ func probeContractWithArgs(ctx context.Context, evm *vm.EVM, header *types.Heade
 	return res, nil
 }
 
-func probeContractWithArgs2(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, ibs *state.IntraBlockState, addr common.Address, abi *abi.ABI, data *[]byte, outputName string) ([]interface{}, error, *core.ExecutionResult) {
+func probeContractWithArgs2(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, ibs *state.IntraBlockState, addr common.Address, abi *abi.ABI, data *[]byte, outputName string) ([]interface{}, error, *evmtypes.ExecutionResult) {
 	// Use block gas limit for the call
 	gas := hexutil.Uint64(header.GasLimit)
 	args := ethapi.CallArgs{
 		To:   &addr,
-		Data: (*hexutility.Bytes)(data),
+		Data: (*hexutil.Bytes)(data),
 		Gas:  &gas,
 	}
 
@@ -98,11 +114,11 @@ func probeContractWithArgs2(ctx context.Context, evm *vm.EVM, header *types.Head
 	return res, nil, ret
 }
 
-func expectRevert(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, ibs *state.IntraBlockState, addr *common.Address, data *[]byte) (bool, error, *core.ExecutionResult) {
+func expectRevert(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, ibs *state.IntraBlockState, addr *common.Address, data *[]byte) (bool, error, *evmtypes.ExecutionResult) {
 	gas := hexutil.Uint64(header.GasLimit)
 	args := ethapi.CallArgs{
 		To:   addr,
-		Data: (*hexutility.Bytes)(data),
+		Data: (*hexutil.Bytes)(data),
 		Gas:  &gas,
 	}
 	ret, err := probeContract(ctx, evm, header, chainConfig, ibs, args)
@@ -114,7 +130,7 @@ func expectRevert(ctx context.Context, evm *vm.EVM, header *types.Header, chainC
 	return ret.Failed(), nil, ret
 }
 
-func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, state *state.IntraBlockState, args ethapi.CallArgs) (*core.ExecutionResult, error) {
+func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chainConfig *chain.Config, state *state.IntraBlockState, args ethapi.CallArgs) (*evmtypes.ExecutionResult, error) {
 	var baseFee *uint256.Int
 	if header != nil && header.BaseFee != nil {
 		var overflow bool
@@ -128,12 +144,13 @@ func probeContract(ctx context.Context, evm *vm.EVM, header *types.Header, chain
 		return nil, err
 	}
 
-	txCtx := core.NewEVMTxContext(msg)
+	txCtx := protocol.NewEVMTxContext(msg)
 	state.Reset()
 	evm.Reset(txCtx, state)
 
-	gp := new(core.GasPool).AddGas(msg.Gas())
-	result, err := core.ApplyMessage(evm, msg, gp, true /* refunds */, false /* gasBailout */)
+	gp := new(protocol.GasPool).AddGas(msg.Gas())
+	// TODO(ots2-rebase): ApplyMessage now requires rules.Engine, passing nil for now
+	result, err := protocol.ApplyMessage(evm, msg, gp, true /* refunds */, false /* gasBailout */, nil)
 	if err != nil {
 		return nil, err
 	}

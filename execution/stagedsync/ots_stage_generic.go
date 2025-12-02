@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -5,13 +21,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/wrap"
-	"github.com/ledgerwatch/erigon/consensus"
-	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/db/state/execctx"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/protocol/rules"
+	"github.com/erigontech/erigon/execution/stagedsync/stages"
 )
 
 type ContractAnalyzerCfg struct {
@@ -19,10 +35,10 @@ type ContractAnalyzerCfg struct {
 	tmpDir      string
 	chainConfig *chain.Config
 	blockReader services.FullBlockReader
-	engine      consensus.Engine
+	engine      rules.Engine
 }
 
-func StageDbAwareCfg(db kv.RwDB, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine consensus.Engine) ContractAnalyzerCfg {
+func StageDbAwareCfg(db kv.RwDB, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine rules.Engine) ContractAnalyzerCfg {
 	return ContractAnalyzerCfg{
 		db,
 		tmpDir,
@@ -46,7 +62,7 @@ const SHORT_RANGE_EXECUTION_THRESHOLD = 16
 // The db param should be used by concurrent implementations that are optimized for the first sync, hence
 // there is no risk of trying to read uncommited data. In this case, the implementation can span several
 // goroutines to process data saved by a previous stages concurrently.
-type StageExecutor = func(ctx context.Context, db kv.RoDB, tx kv.RwTx, isInternalTx bool, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine consensus.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, logger log.Logger) (uint64, error)
+type StageExecutor = func(ctx context.Context, db kv.RoDB, tx kv.RwTx, isInternalTx bool, tmpDir string, chainConfig *chain.Config, blockReader services.FullBlockReader, engine rules.Engine, startBlock, endBlock uint64, isShortInterval bool, logEvery *time.Ticker, s *StageState, logger log.Logger) (uint64, error)
 
 // Defines a stage executor function to be called back by GenericStageUnwindFunc.
 //
@@ -67,17 +83,19 @@ type UnwindExecutor = func(ctx context.Context, tx kv.RwTx, u *UnwindState, bloc
 //   - It determines the block range so verbose logs may be supressed.
 //   - It handles execution completion automatically (db save of last successful block).
 func GenericStageForwardFunc(ctx context.Context, cfg ContractAnalyzerCfg, parentStage stages.SyncStage, executor StageExecutor) ExecFunc {
-	return func(firstCycle bool, badBlockUnwind bool, s *StageState, u Unwinder, txc wrap.TxContainer, logger log.Logger) error {
-		return genericStageForwardImpl(ctx, cfg, s, txc.Tx, executor, parentStage, logger, false, 0, 0)
+	// TODO(ots2-rebase): Stage API changed - now uses SharedDomains + TemporalRwTx instead of TxContainer
+	return func(badBlockUnwind bool, s *StageState, u Unwinder, doms *execctx.SharedDomains, rwTx kv.TemporalRwTx, logger log.Logger) error {
+		return genericStageForwardImpl(ctx, cfg, s, rwTx, executor, parentStage, logger, false, 0, 0)
 	}
 }
 
 func GenericStageForwardFuncWithDebug(ctx context.Context, cfg ContractAnalyzerCfg, parentStage stages.SyncStage, executor StageExecutor, _debugStartBlock, _debugEndBlock uint64) ExecFunc {
-	return func(firstCycle bool, badBlockUnwind bool, s *StageState, u Unwinder, txc wrap.TxContainer, logger log.Logger) error {
+	// TODO(ots2-rebase): Stage API changed - now uses SharedDomains + TemporalRwTx instead of TxContainer
+	return func(badBlockUnwind bool, s *StageState, u Unwinder, doms *execctx.SharedDomains, rwTx kv.TemporalRwTx, logger log.Logger) error {
 		if s.BlockNumber > 0 {
 			return nil
 		}
-		return genericStageForwardImpl(ctx, cfg, s, txc.Tx, executor, parentStage, logger, true, _debugStartBlock, _debugEndBlock)
+		return genericStageForwardImpl(ctx, cfg, s, rwTx, executor, parentStage, logger, true, _debugStartBlock, _debugEndBlock)
 	}
 }
 
@@ -169,8 +187,9 @@ func genericStageForwardImpl(ctx context.Context, cfg ContractAnalyzerCfg, s *St
 //   - It determines the block range so verbose logs may be supressed.
 //   - It handles unwind completion automatically (db saves).
 func GenericStageUnwindFunc(ctx context.Context, cfg ContractAnalyzerCfg, executor UnwindExecutor) UnwindFunc {
-	return func(firstCycle bool, u *UnwindState, s *StageState, txc wrap.TxContainer, logger log.Logger) error {
-		return GenericStageUnwindImpl(ctx, txc.Tx, cfg, u, executor)
+	// TODO(ots2-rebase): Unwind API changed to use SharedDomains + TemporalRwTx
+	return func(u *UnwindState, s *StageState, doms *execctx.SharedDomains, rwTx kv.TemporalRwTx, logger log.Logger) error {
+		return GenericStageUnwindImpl(ctx, rwTx, cfg, u, executor)
 	}
 }
 
@@ -222,21 +241,8 @@ func GenericStageUnwindImpl(ctx context.Context, tx kv.RwTx, cfg ContractAnalyze
 // This is a no-op implementation of stage pruning function to be used as
 // a filler for stages that don't support pruning.
 func NoopStagePrune(ctx context.Context, cfg ContractAnalyzerCfg) PruneFunc {
-	return func(firstCycle bool, p *PruneState, tx kv.RwTx, logger log.Logger) (err error) {
-		useExternalTx := tx != nil
-		if !useExternalTx {
-			tx, err = cfg.db.BeginRw(ctx)
-			if err != nil {
-				return err
-			}
-			defer tx.Rollback()
-		}
-
-		if !useExternalTx {
-			if err = tx.Commit(); err != nil {
-				return err
-			}
-		}
+	// TODO(ots2-rebase): PruneFunc signature changed
+	return func(p *PruneState, tx kv.RwTx, logger log.Logger) (err error) {
 		return nil
 	}
 }

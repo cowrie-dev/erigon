@@ -1,3 +1,19 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
 package stagedsync
 
 import (
@@ -7,15 +23,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/erigon/ots/indexer"
-	"github.com/ledgerwatch/erigon/turbo/services"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/hexutil"
+	"github.com/erigontech/erigon/common/length"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/kv/bitmapdb"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/ots/indexer"
 	"golang.org/x/exp/slices"
 )
 
@@ -39,7 +55,7 @@ func runUnwind(ctx context.Context, tx kv.RwTx, isShortInterval bool, logEvery *
 	defer counter.Close()
 
 	// The unwind interval is ]u.UnwindPoint, EOF]
-	startBlock := hexutility.EncodeTs(u.UnwindPoint + 1)
+	startBlock := hexutil.EncodeTs(u.UnwindPoint + 1)
 
 	// Delete all specified address attributes for affected addresses down to
 	// unwind point + 1
@@ -286,7 +302,7 @@ func unwindAddress(tx kv.RwTx, target, targetDel kv.RwCursor, counter kv.RwCurso
 		for {
 			if len(v) == 1 {
 				// DB corrupted
-				return fmt.Errorf("db possibly corrupted, len(v) == 1: bucket=%s addr=%s k=%s v=%s", counterBucket, addr, hexutility.Encode(k), hexutility.Encode(v))
+				return fmt.Errorf("db possibly corrupted, len(v) == 1: bucket=%s addr=%s k=%s v=%s", counterBucket, addr, hexutil.Encode(k), hexutil.Encode(v))
 			}
 			lastCounter = binary.BigEndian.Uint64(v[:length.Counter])
 			chunk := binary.BigEndian.Uint64(v[length.Counter:])
